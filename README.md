@@ -101,7 +101,7 @@ Passo a passo:
    git add .
    git commit -m "Árvore genealógica Brambilla"
    git branch -M main
-   git remote add origin https://github.com/SEU-USUARIO/arvore-brambilla.git
+   git remote add origin https://github.com/siquette/arvore-brambilla.git
    git push -u origin main
    ```
 
