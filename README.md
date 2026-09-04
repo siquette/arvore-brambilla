@@ -136,4 +136,5 @@ Para uma iteração futura com múltiplos parentes editando ao mesmo
 tempo, esses dados precisarão migrar para um banco de dados real
 (Postgres, Firebase, etc.) em vez de ficarem hardcoded no código — isso
 é o próximo passo depois de validar que a interface e a estrutura de
-dados fazem sentido.
+dados fazem sentido
+
