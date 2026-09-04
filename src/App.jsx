@@ -1,4 +1,92 @@
-import React, { useState, useMemo, useRef, useCallback } from "react";
+import React, { useState, useMemo, useRef, useCallback, Component } from "react";
+
+/* ============================================================
+   Log de diagnóstico — guarda as últimas ações (drag, zoom,
+   collapse) em window, para sobreviver a um crash do componente
+   React e aparecer na tela de erro do ErrorBoundary abaixo.
+   ============================================================ */
+if (typeof window !== "undefined" && !window.__ARVORE_LOG__) {
+  window.__ARVORE_LOG__ = [];
+}
+function logAcao(tipo, detalhe) {
+  if (typeof window === "undefined") return;
+  const entrada = { tipo, detalhe, hora: new Date().toISOString().slice(11, 23) };
+  window.__ARVORE_LOG__.push(entrada);
+  // mantém só as últimas 50 ações, para não crescer sem limite
+  if (window.__ARVORE_LOG__.length > 50) window.__ARVORE_LOG__.shift();
+}
+
+/* ============================================================
+   ErrorBoundary — sem isso, um erro durante a renderização (ex:
+   no meio de um drag ou de um collapse) derruba a árvore inteira
+   e deixa a tela em branco, sem nenhuma pista do que houve.
+   Com isso, o erro fica visível na própria página, junto com o
+   log das últimas ações, em vez de exigir abrir o console do
+   navegador.
+   ============================================================ */
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { erro: null, info: null };
+  }
+  static getDerivedStateFromError(erro) {
+    return { erro };
+  }
+  componentDidCatch(erro, info) {
+    logAcao("erro_capturado", erro.message);
+    this.setState({ info });
+  }
+  render() {
+    if (this.state.erro) {
+      const log = (typeof window !== "undefined" && window.__ARVORE_LOG__) || [];
+      return (
+        <div
+          style={{
+            fontFamily: "monospace",
+            background: "#2E2418",
+            color: "#F2ECE0",
+            minHeight: "100vh",
+            padding: 24,
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          <h2 style={{ color: "#C1651F", marginTop: 0 }}>A árvore travou.</h2>
+          <p>Copie o texto abaixo e envie para revisão — ele mostra o erro e as últimas ações antes do travamento.</p>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              padding: "8px 16px",
+              marginBottom: 16,
+              cursor: "pointer",
+              background: "#8C3B2E",
+              color: "#F2ECE0",
+              border: "none",
+              borderRadius: 6,
+            }}
+          >
+            Recarregar página
+          </button>
+          <h3>Erro</h3>
+          <div style={{ background: "#1a1510", padding: 12, borderRadius: 6, fontSize: 12.5 }}>
+            {this.state.erro.message}
+            {"\n\n"}
+            {this.state.erro.stack}
+          </div>
+          <h3>Últimas {log.length} ações antes do erro</h3>
+          <div style={{ background: "#1a1510", padding: 12, borderRadius: 6, fontSize: 12.5, maxHeight: 300, overflowY: "auto" }}>
+            {log.map((l, i) => (
+              <div key={i}>
+                [{l.hora}] {l.tipo}: {JSON.stringify(l.detalhe)}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 
 /* ============================================================
    DADOS — 489 pessoas extraídas do Memorial dos Brambillas
@@ -64,13 +152,16 @@ function findRoots(pessoas, byId) {
   return pessoas.filter((p) => !comPais.has(p.id) && p.geracao === p.geracao.toUpperCase());
 }
 
-function App() {
+function AppInterno() {
   const pessoas = PESSOAS_RAW;
   const byId = useMemo(() => buildIndex(pessoas), [pessoas]);
   const roots = useMemo(() => findRoots(pessoas, byId), [pessoas, byId]);
 
-  // Nós recolhidos (descendência oculta). Por padrão, colapsa tudo exceto
-  // a linha direta até Rodrigo, para não abrir com 489 pessoas na tela.
+  // Nós expandidos (filhos visíveis). Por padrão, só o nó raiz (Gaetano)
+  // vem aberto - qualquer outro nó, incluindo o resto da linha direta até
+  // Rodrigo, começa fechado e só expande quando o próprio usuário clica
+  // nele. Abrir um nó NUNCA abre os netos automaticamente: cada nível
+  // exige seu próprio clique, sem exceção.
   const LINHA_DIRETA = useMemo(() => {
     const linha = new Set([
       "B-gaetano",
@@ -83,15 +174,7 @@ function App() {
     return linha;
   }, []);
 
-  const [collapsed, setCollapsed] = useState(() => {
-    const s = new Set();
-    pessoas.forEach((p) => {
-      if ((p.filhos_ids || []).length > 0 && !LINHA_DIRETA.has(p.id)) {
-        s.add(p.id);
-      }
-    });
-    return s;
-  });
+  const [expanded, setExpanded] = useState(() => new Set(["B-gaetano"]));
 
   const [selectedId, setSelectedId] = useState(null);
   const [query, setQuery] = useState("");
@@ -115,23 +198,24 @@ function App() {
   const V_GAP = layoutConfig.vGap;
   const COUPLE_GAP = layoutConfig.coupleGap;
 
+  // Alterna SOMENTE o nó clicado - os filhos dele, ao aparecerem, nascem
+  // fechados (não estão em 'expanded' ainda), então abrir um nó nunca
+  // abre a ramificação inteira de uma vez.
   const toggleCollapse = useCallback((id) => {
-    setCollapsed((prev) => {
+    setExpanded((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
+      const estavaAberto = next.has(id);
+      if (estavaAberto) next.delete(id);
       else next.add(id);
+      logAcao("toggle_collapse", { id, agora: estavaAberto ? "fechado" : "aberto" });
       return next;
     });
   }, []);
 
-  // Abre todos os ramos de uma vez (nenhum nó fica recolhido)
+  // Abre todos os ramos de uma vez (expande todo mundo que tem filhos)
   const expandAll = useCallback(() => {
-    setCollapsed(new Set());
-  }, []);
-
-  // Fecha todos os ramos que têm filhos (volta ao estado mais compacto possível)
-  const collapseAll = useCallback(() => {
-    setCollapsed(() => {
+    logAcao("expand_all", null);
+    setExpanded(() => {
       const s = new Set();
       pessoas.forEach((p) => {
         if ((p.filhos_ids || []).length > 0) s.add(p.id);
@@ -139,6 +223,12 @@ function App() {
       return s;
     });
   }, [pessoas]);
+
+  // Fecha todos os ramos (volta ao estado mais compacto possível)
+  const collapseAll = useCallback(() => {
+    logAcao("collapse_all", null);
+    setExpanded(new Set());
+  }, []);
 
   /* --------- Construção da lista de nós visíveis + posições --------- */
   const { positioned, edges, generationLabels } = useMemo(() => {
@@ -159,7 +249,7 @@ function App() {
       visited.add(person.id);
 
       const genIdx = generationIndex(person.geracao);
-      const isCollapsed = collapsed.has(person.id);
+      const isCollapsed = !expanded.has(person.id);
 
       // cônjuges (mesma linha, ao lado)
       const conjugeIds = (person.conjuges || []).filter((cid) => byId.has(cid));
@@ -250,7 +340,7 @@ function App() {
     });
 
     return { positioned, edges, generationLabels };
-  }, [pessoas, byId, roots, collapsed, layoutConfig]);
+  }, [pessoas, byId, roots, expanded, layoutConfig]);
 
   /* --------- Busca --------- */
   const searchResults = useMemo(() => {
@@ -260,9 +350,11 @@ function App() {
   }, [query, pessoas]);
 
   // Expande todos os ancestrais de um nó para garantir visibilidade
+  // (usado pela busca) - adiciona cada ancestral em 'expanded', sem
+  // mexer no estado de mais nenhum outro ramo da árvore.
   const revealPath = useCallback(
     (id) => {
-      setCollapsed((prev) => {
+      setExpanded((prev) => {
         const next = new Set(prev);
         let current = byId.get(id);
         const guard = new Set();
@@ -272,7 +364,7 @@ function App() {
           // encontra o pai (quem lista este id em filhos_ids)
           const parent = pessoas.find((p) => (p.filhos_ids || []).includes(current.id));
           if (parent) {
-            next.delete(parent.id);
+            next.add(parent.id);
             current = parent;
           } else {
             current = null;
@@ -307,6 +399,7 @@ function App() {
     setTransform((t) => {
       const delta = -e.deltaY * 0.001;
       const k = Math.min(2.2, Math.max(0.25, t.k + delta));
+      logAcao("zoom", { de: t.k, para: k });
       return { ...t, k };
     });
   }, []);
@@ -314,18 +407,22 @@ function App() {
   const onMouseDown = useCallback(
     (e) => {
       dragState.current = { startX: e.clientX, startY: e.clientY, origX: transform.x, origY: transform.y };
+      logAcao("drag_inicio", { x: e.clientX, y: e.clientY });
     },
     [transform]
   );
   const onMouseMove = useCallback((e) => {
-    if (!dragState.current) return;
-    const dx = e.clientX - dragState.current.startX;
-    const dy = e.clientY - dragState.current.startY;
-    setTransform((t) => ({ ...t, x: dragState.current.origX + dx, y: dragState.current.origY + dy }));
+    const drag = dragState.current;
+    if (!drag) return;
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+    setTransform((t) => ({ ...t, x: drag.origX + dx, y: drag.origY + dy }));
   }, []);
   const onMouseUp = useCallback(() => {
+    if (dragState.current) logAcao("drag_fim", null);
     dragState.current = null;
   }, []);
+
 
   const selected = selectedId ? byId.get(selectedId) : null;
 
@@ -524,6 +621,7 @@ function App() {
               {Array.from(positioned.entries()).map(([id, info]) => {
                 if (info.isSpouse) return null;
                 const person = info.person;
+                if (!person) return null;
                 return (person.conjuges || []).map((cid) => {
                   const cInfo = positioned.get(cid);
                   if (!cInfo) return null;
@@ -549,7 +647,7 @@ function App() {
                 const p = info.person;
                 if (!p) return null;
                 const hasChildren = (p.filhos_ids || []).length > 0;
-                const isCollapsed = collapsed.has(id);
+                const isCollapsed = !expanded.has(id);
                 const isSelected = selectedId === id;
                 const cor = corPrincipal(p.status_dado);
                 const isUsuario = id === "G-rodrigo-aroni-siquette";
@@ -919,6 +1017,14 @@ function formatEvento(ev) {
   if (ev.local) partes.push(ev.local);
   if (partes.length === 0) return null;
   return partes.join(" — ");
+}
+
+function App() {
+  return (
+    <ErrorBoundary>
+      <AppInterno />
+    </ErrorBoundary>
+  );
 }
 
 export default App;

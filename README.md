@@ -34,11 +34,14 @@ npm run build
 - **Busca por nome**: digite no campo de busca no topo; ao clicar num
   resultado, a árvore expande automaticamente todos os ancestrais
   necessários para revelar a pessoa e abre o painel de detalhes dela.
-- **Colapsar/expandir ramos**: clique no botão "–"/"+" na base de
-  qualquer nó com filhos, para esconder ou mostrar a descendência
-  daquele ramo. Por padrão, tudo está recolhido exceto a linha direta
-  de Rodrigo (Gaetano → Giovanni → Mário → Iracema → Shirley →
-  Rodrigo), destacada com borda tracejada.
+- **Colapsar/expandir ramos, nível a nível**: clique no botão "–"/"+"
+  na base de qualquer nó com filhos para mostrar ou esconder só os
+  filhos diretos daquele nó — os netos continuam fechados até você
+  clicar neles também. Isso permite abrir só as ramificações que
+  interessam, sem a tela poluir com a árvore inteira de uma vez. Por
+  padrão, só a linha direta de Rodrigo (Gaetano → Giovanni → Mário →
+  Iracema → Shirley → Rodrigo) vem aberta, destacada com borda
+  tracejada.
 - **Zoom e pan**: scroll do mouse para zoom, clique e arraste para
   navegar.
 - **Cores por status do dado**: cada nó tem um ponto colorido indicando
@@ -101,7 +104,7 @@ Passo a passo:
    git add .
    git commit -m "Árvore genealógica Brambilla"
    git branch -M main
-   git remote add origin https://github.com/siquette/arvore-brambilla.git
+   git remote add origin https://github.com/SEU-USUARIO/arvore-brambilla.git
    git push -u origin main
    ```
 
@@ -136,5 +139,4 @@ Para uma iteração futura com múltiplos parentes editando ao mesmo
 tempo, esses dados precisarão migrar para um banco de dados real
 (Postgres, Firebase, etc.) em vez de ficarem hardcoded no código — isso
 é o próximo passo depois de validar que a interface e a estrutura de
-dados fazem sentido
-
+dados fazem sentido.
